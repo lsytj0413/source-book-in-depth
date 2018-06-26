@@ -1796,17 +1796,210 @@ func First(query string, replicas ...Search) Result {
 
 ### 第五十二条: 在值实例上使用指针方法 ###
 
+只要是可寻址的, 就可以在值上调用指针方法, 即在某些情况下可以不需要有值方法的版本. 不是所有变量都是可寻址的, map 的值元素和 interface 引用的变量不可寻址.
+
+```
+package main
+
+import "fmt"
+
+type data struct {
+	name string
+}
+
+func (p *data) print() {
+	fmt.Println("name:", p.name)
+}
+
+type printer interface {
+	print()
+}
+
+func main() {
+	d1 := data{"one"}
+	d1.print() //ok
+
+	var in printer = data{"two"} //error
+	in.print()
+
+	m := map[string]data{"x": data{"three"}}
+	m["x"].print() //error
+}
+```
+
 ### 第五十三条: 更新 map 的值 ###
+
+无法通过不可寻址的 map 值元素进行更新操作.
+
+```
+package main
+
+type data struct {
+	name string
+}
+
+func main() {
+	m := map[string]data{"x": {"one"}}
+	m["x"].name = "two" //error
+}
+```
 
 ### 第五十四条: nil interface 和 nil interface 值 ###
 
+interface 不是指针, 只有当 interface 变量的类型域和值域都是 nil 时该值才等于 nil.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	var data *byte
+	var in interface{}
+
+	fmt.Println(data, data == nil) //prints: <nil> true
+	fmt.Println(in, in == nil)     //prints: <nil> true
+
+	in = data
+	fmt.Println(in, in == nil) //prints: <nil> false
+	//'data' is 'nil', but 'in' is not 'nil'
+}
+```
+
+当实现一个返回接口的函数时需要注意这一点:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	doit := func(arg int) interface{} {
+		var result *struct{} = nil
+
+		if arg > 0 {
+			result = &struct{}{}
+		}
+
+		return result
+	}
+
+	if res := doit(-1); res != nil {
+		fmt.Println("good result:", res) //prints: good result: <nil>
+		//'res' is not 'nil', but its value is 'nil'
+	}
+}
+```
+
 ### 第五十五条: 堆变量和栈变量 ###
+
+在 Go 中一般情况下不需要知道变量是在堆还是在栈上分配的, 编译器会根据变量定义的位置和逃逸分析的结果自动选择存储变量的位置.
+
+如果需要知道变量分配的位置, 可以将 "-m" 标识传递给 "go build" 或 "go run"(例如 go run -gcflags -m app.go).
 
 ### 第五十六条: GOMAXPROCS, 并发和并行 ###
 
+从 Go1.5 开始会将执行上下文的数量设置为 runtime.NumCPU() 返回的数量, 这个值可能匹配系统中的逻辑 CPU 的数量, 具体取决于 CPU 亲和性设置. 可以通过设置 **GOMAXPROCS** 环境变量或者调用 runtime.GOMAXPROCS() 函数来改变这个数值.
+
+可以将 GOMAXPROCS 的值设置得比逻辑 CPU 的数量更大. GOMAXPROCS 过去的最大值为 256, 在 Go1.9 中增加到 1024, 从 Go1.10 开始不再有限制.
+
+```
+package main
+
+import (
+	"fmt"
+	"runtime"
+)
+
+func main() {
+	fmt.Println(runtime.GOMAXPROCS(-1)) //prints: X (1 on play.golang.org)
+	fmt.Println(runtime.NumCPU())       //prints: X (1 on play.golang.org)
+	runtime.GOMAXPROCS(20)
+	fmt.Println(runtime.GOMAXPROCS(-1)) //prints: 20
+	runtime.GOMAXPROCS(300)
+	fmt.Println(runtime.GOMAXPROCS(-1)) //prints: 300
+}
+```
+
 ### 第五十七条: 读操作和写操作的重排序 ###
 
+Go 可能会对一个操作进行重新排序 (具体内容可见 [mem](https://tip.golang.org/ref/mem)), 它确保了在 goroutine 中发生的整体行为不会改变, 但是不保证多个 goroutines 的执行顺序.
+
+```
+var a, b int
+
+func u1() {
+	time.Sleep( time.Second)
+	a = 1
+	b = 2
+}
+
+func u2() {
+	time.Sleep( time.Second)
+	a = 3
+	b = 4
+}
+
+func p() {
+	println(a)
+	println(b)
+}
+
+func main() {
+	go u1()
+	go u2()
+	time.Sleep(time.Second)
+	go p()
+	time.Sleep(2 * time.Second)
+}
+```
+
+多次执行以上代码可以看到多种组合. 如果需要在多个 goroutines 中保留读写操作的顺序, 可以使用 channel 或 "sync" package 中的工具进行同步.
+
 ### 第五十八条: 抢占式调度 ###
+
+一个 goroutine 可以阻止其他 goroutine 运行, 只要不包含触发调度的代码:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	done := false
+
+	go func() {
+		done = true
+	}()
+
+	for !done {
+	}
+	fmt.Println("done!")
+}
+```
+
+调度程序会在 GC, go 语句, 同步操作, 系统调用和锁操作之后运行, 也可能在非内联函数调用时运行. 通过主动调用 runtime.Gosched() 函数也可以进行显示调度.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	done := false
+
+	go func() {
+		done = true
+	}()
+
+	for !done {
+		fmt.Println("not done!") //not inlined
+	}
+	fmt.Println("done!")
+}
+```
+
+可以将 "-m" 标识传递给 "go run" 或 "go build" 命令来获知函数是否被内联.
 
 # 参考资料 #
 
