@@ -419,49 +419,789 @@ func main() {
 
 ### 第十七条: string 和 []byte 之间的转换 ###
 
+当你将 string 转换为 []byte (或者相反)时会获得一个原始值的拷贝. Go 也有一些 string 与 []byte 类型转换中的优化, 以避免额外的分配:
+
+- 当将 []byte 用于 map 查找时: m[string(key)]
+- 在 range 子句中进行转换时: for i, v := range []byte(str)
+
 ### 第十八条: string 和索引操作符 ###
+
+在 string 上使用索引操作符会返回一个字节值.
+
+```
+package main
+
+import "fmt"
+
+func main() {  
+    x := "text"
+    fmt.Println(x[0]) //print 116
+    fmt.Printf("%T",x[0]) //prints uint8
+}
+```
+
+如果你需要访问字符(unicode代码点), 需要使用 range 子句. 官方的 "unicode/utf8" package 和 "golang.org/x/exp/utf8string" package 也非常有用.
 
 ### 第十九条: string 并不总是 utf-8 格式的文本 ###
 
+string 的值并不总是 utf8 的文本, 它可以包含任意字节. 当 string 的值是字符串字面量时它一般是 utf8 字节, 即使是这时也可以使用转义字符包含其他的数据.
+
+可以使用 "unicode/utf8" package 中的 ValidString 函数来判断 string 是否是 utf8:
+
+```
+package main
+
+import (  
+    "fmt"
+    "unicode/utf8"
+)
+
+func main() {  
+    data1 := "ABC"
+    fmt.Println(utf8.ValidString(data1)) //prints: true
+
+    data2 := "A\xfeC"
+    fmt.Println(utf8.ValidString(data2)) //prints: false
+}
+```
+
 ### 第二十条: 注意 string 的长度 ###
+
+内置函数 len 返回的是字节数而不是字符数. 可以使用 "unicode/utf8" package 的 RuneCountInString 函数来获取字符数:
+
+```
+package main
+
+import (
+	"fmt"
+	"unicode/utf8"
+)
+
+func main() {
+	data := "♥"
+	fmt.Println(utf8.RuneCountInString(data)) //prints: 1
+
+	data = "é"
+	fmt.Println(len(data))                    //prints: 3
+	fmt.Println(utf8.RuneCountInString(data)) //prints: 2
+}
+```
+
+但是如果一个字符由多个 rune 组成则该函数也不能返回正确的字符数.
 
 ### 第二十一条: 在多行的 slice, array 和 map 字面量中缺少逗号 ###
 
+在多行的 slice, map 和数组字面量中可能需要保留最后一个逗号.
+
+```
+package main
+
+func main() {
+	x := []int{
+		1,
+		// 2 //error
+	}
+	_ = x
+
+	x = []int{
+		1,
+		2,
+	}
+	x = x
+
+	y := []int{3, 4} //no error
+	y = y
+}
+```
+
 ### 第二十二条: log.Fatal 和 log.Panic 不仅仅是记日志 ###
+
+当调用 log.Fatal* 和 log.Panic* 系列函数时, 应用程序将会被终止.
+
+```
+package main
+
+import "log"
+
+func main() {
+	log.Fatalln("Fatal Level: log entry") //app exits here
+	log.Println("Normal Level: log entry")
+}
+
+```
 
 ### 第二十三条: 内置数据结构的操作不是协程安全的 ###
 
+内置的数据结构, 例如 slice, map 不是协程安全的. 当需要在多个协程中访问这些数据时, 可以使用 "sync" package 来进行同步.
+
 ### 第二十四条: 将 range 子句用于 string 获得的值 ###
+
+当将 range 子句用于 string 类型的值时, 第二个值返回的时字符, 索引值是该字符的第一个字节的位置. 注意实际的字符可能由多个 rune 组成, 更多的信息可以查看 "golang.org/x/text/unicode/norm" 包.
+
+range 子句会尝试将数据解释为 utf8 文本, 对于它不理解的字节序列会返回 0xfffd(即 unicode 占位字符).
+
+```
+package main
+
+import "fmt"
+
+func main() {  
+    data := "A\xfe\x02\xff\x04"
+    for _,v := range data {
+        fmt.Printf("%#x ",v)
+    }
+    //prints: 0x41 0xfffd 0x2 0xfffd 0x4 (not ok)
+
+    fmt.Println()
+    for _,v := range []byte(data) {
+        fmt.Printf("%#x ",v)
+    }
+    //prints: 0x41 0xfe 0x2 0xff 0x4 (good)
+}
+```
 
 ### 第二十五条: 使用 for-range 子句迭代 map ###
 
+Go 会尝试对 map 的序列进行随机化处理, 多次运行可能得到不同的顺序.
+
+```
+package main
+
+import "fmt"
+
+func main() {  
+    m := map[string]int{"one":1,"two":2,"three":3,"four":4}
+    for k,v := range m {
+        fmt.Println(k,v)
+    }
+}
+```
+
+多次运行以上代码将看到键值对以不同的顺序输出.
+
 ### 第二十六条: switch 语句中的 fallthrough 行为 ###
+
+switch 语句中的 case 块在默认情况下不会自动落入下一个 case 块, 除非你使用 fallthrough 指定.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	isSpace := func(ch byte) bool {
+		switch ch {
+		case ' ': //error
+		case '\t':
+			return true
+		}
+		return false
+	}
+
+	fmt.Println(isSpace('\t')) //prints true (ok)
+	fmt.Println(isSpace(' '))  //prints false (not ok)
+}
+```
 
 ### 第二十七条: 自增和自减 ###
 
+Go 语言不支持自增和自减的前缀版本, 也不能在表达式中使用.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	data := []int{1, 2, 3}
+	i := 0
+	// ++i //error
+	// fmt.Println(data[i++]) //error
+
+	i++
+	fmt.Println(data[i])
+}
+```
+
 ### 第二十八条: 按位 NOT 运算 ###
+
+Go 使用 ^ 作为一元 NOT 运算符, ^ 也是二元 XOR 运算符, 并且使用 &^ 作为 AND NOT 运算符.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	var a uint8 = 0x82
+	var b uint8 = 0x02
+	fmt.Printf("%08b [A]\n", a)
+	fmt.Printf("%08b [B]\n", b)
+
+	fmt.Printf("%08b (NOT B)\n", ^b)
+	fmt.Printf("%08b ^ %08b = %08b [B XOR 0xff]\n", b, 0xff, b^0xff)
+
+	fmt.Printf("%08b ^ %08b = %08b [A XOR B]\n", a, b, a^b)
+	fmt.Printf("%08b & %08b = %08b [A AND B]\n", a, b, a&b)
+	fmt.Printf("%08b &^%08b = %08b [A 'AND NOT' B]\n", a, b, a&^b)
+	fmt.Printf("%08b&(^%08b)= %08b [A AND (NOT B)]\n", a, b, a&(^b))
+}
+```
 
 ### 第二十九条: 运算符优先级差异 ###
 
+一些运算符的优先级差异如下:
+
+```
+package main
+
+import "fmt"
+
+func main() {  
+    fmt.Printf("0x2 & 0x2 + 0x4 -> %#x\n",0x2 & 0x2 + 0x4)
+    //prints: 0x2 & 0x2 + 0x4 -> 0x6
+    //Go:    (0x2 & 0x2) + 0x4
+    //C++:    0x2 & (0x2 + 0x4) -> 0x2
+
+    fmt.Printf("0x2 + 0x2 << 0x1 -> %#x\n",0x2 + 0x2 << 0x1)
+    //prints: 0x2 + 0x2 << 0x1 -> 0x6
+    //Go:     0x2 + (0x2 << 0x1)
+    //C++:   (0x2 + 0x2) << 0x1 -> 0x8
+
+    fmt.Printf("0xf | 0x2 ^ 0x2 -> %#x\n",0xf | 0x2 ^ 0x2)
+    //prints: 0xf | 0x2 ^ 0x2 -> 0xd
+    //Go:    (0xf | 0x2) ^ 0x2
+    //C++:    0xf | (0x2 ^ 0x2) -> 0xf
+}
+```
+
 ### 第三十条: 结构体中的未导出字段不会被编码 ###
+
+在 struct 中的未导出字段(小写开头) 是不会被 (json, xml, gob 等)编码的, 当解码时这些字段将被设置为零值.
+
+```
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type MyData struct {
+	One int
+	two string
+}
+
+func main() {
+	in := MyData{1, "two"}
+	fmt.Printf("%#v\n", in) //prints main.MyData{One:1, two:"two"}
+
+	encoded, _ := json.Marshal(in)
+	fmt.Println(string(encoded)) //prints {"One":1}
+
+	var out MyData
+	json.Unmarshal(encoded, &out)
+
+	fmt.Printf("%#v\n", out) //prints main.MyData{One:1, two:""}
+}
+```
 
 ### 第三十一条: 程序不会主动等待所有 goroutine 退出 ###
 
+在 Go 中应用程序不会主动等待所有的 goroutines 完成:
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	workerCount := 2
+
+	for i := 0; i < workerCount; i++ {
+		go doit(i)
+	}
+	time.Sleep(1 * time.Second)
+	fmt.Println("all done!")
+}
+
+func doit(workerId int) {
+	fmt.Printf("[%v] is running\n", workerId)
+	time.Sleep(3 * time.Second)
+	fmt.Printf("[%v] is done\n", workerId)
+}
+
+// [0] is running
+// [1] is running
+// all done!
+```
+
+一种常见的解决方案是使用 WaitGroup 来等待 goroutine 的退出, 对于有消息处理循环的 goroutine, 可以向每个 goroutine 发送一个退出消息, 或者关闭它接收消息的 channel.
+
+```
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	workerCount := 2
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go doit(i, done, wg)
+	}
+
+	close(done)
+	wg.Wait()
+	fmt.Println("all done!")
+}
+
+func doit(workerId int, done <-chan struct{}, wg sync.WaitGroup) {
+	fmt.Printf("[%v] is running\n", workerId)
+	defer wg.Done()
+	<-done
+	fmt.Printf("[%v] is done\n", workerId)
+}
+
+// [1] is running
+// [1] is done
+// [0] is running
+// [0] is done
+// fatal error: all goroutines are asleep - deadlock!
+```
+
+上面的代码看似正确的, 但是还包含一个隐藏的导致死锁的错误. 错误原因是每个 goroutine 都获得了原始 WaitGroup 变量的副本, 当在 goroutine 中执行 wg.Done() 时对原始变量没有影响. 正确版本的代码如下:
+
+```
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	wq := make(chan interface{})
+	workerCount := 2
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go doit(i, wq, done, &wg)
+	}
+
+	for i := 0; i < workerCount; i++ {
+		wq <- i
+	}
+
+	close(done)
+	wg.Wait()
+	fmt.Println("all done!")
+}
+
+func doit(workerId int, wq <-chan interface{}, done <-chan struct{}, wg *sync.WaitGroup) {
+	fmt.Printf("[%v] is running\n", workerId)
+	defer wg.Done()
+	for {
+		select {
+		case m := <-wq:
+			fmt.Printf("[%v] m => %v\n", workerId, m)
+		case <-done:
+			fmt.Printf("[%v] is done\n", workerId)
+			return
+		}
+	}
+}
+```
+
+现在的代码会按照我们预期的方式工作.
+
 ### 第三十二条: 发送到无缓冲的 channel 操作会等待接收者就绪才会返回 ###
+
+对于没有缓冲的 channel, 发送者在接收者接收消息之后就会继续运行, 这可能导致接收者没有足够的时间来处理消息.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	ch := make(chan string)
+
+	go func() {
+		for m := range ch {
+			fmt.Println("processed:", m)
+		}
+	}()
+
+	ch <- "cmd.1"
+	ch <- "cmd.2" //won't be processed
+}
+```
 
 ### 第三十三条: 向关闭的 channel 发送值会导致 panic ###
 
-### 第三十四条: 使用值为 nil 和 channel ###
+从关闭的 channel 接收数据是安全的, 获取的第二个值会被设置为 false 代表未读取到数据. 而将数据发送到关闭的 channel 会导致 panic.
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	ch := make(chan int)
+	for i := 0; i < 3; i++ {
+		go func(idx int) {
+			ch <- (idx + 1) * 2
+		}(i)
+	}
+
+	//get the first result
+	fmt.Println(<-ch)
+	close(ch) //not ok (you still have other senders)
+	//do other work
+	time.Sleep(2 * time.Second)
+}
+```
+
+### 第三十四条: 使用值为 nil 的 channel ###
+
+向值为 nil 的 channel 写入或读取数据会导致阻塞.
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	var ch chan int
+	for i := 0; i < 3; i++ {
+		go func(idx int) {
+			ch <- (idx + 1) * 2
+		}(i)
+	}
+
+	//get first result
+	fmt.Println("result:", <-ch)
+	//do other work
+	time.Sleep(2 * time.Second)
+}
+
+```
 
 ### 第三十五条: 值对象的方法不能修改原值 ###
+
+方法就像普通函数一样, 如果它是声明为值对象的方法那得到的就是对象的副本.
+
+```
+package main
+
+import "fmt"
+
+type data struct {
+	num   int
+	key   *string
+	items map[string]bool
+}
+
+func (this *data) pmethod() {
+	this.num = 7
+}
+
+func (this data) vmethod() {
+	this.num = 8
+	*this.key = "v.key"
+	this.items["vmethod"] = true
+}
+
+func main() {
+	key := "key.1"
+	d := data{1, &key, make(map[string]bool)}
+
+	fmt.Printf("num=%v key=%v items=%v\n", d.num, *d.key, d.items)
+	//prints num=1 key=key.1 items=map[]
+
+	d.pmethod()
+	fmt.Printf("num=%v key=%v items=%v\n", d.num, *d.key, d.items)
+	//prints num=7 key=key.1 items=map[]
+
+	d.vmethod()
+	fmt.Printf("num=%v key=%v items=%v\n", d.num, *d.key, d.items)
+	//prints num=7 key=v.key items=map[vmethod:true]
+}
+```
 
 ## 中级初学者 ##
 
 ### 第三十六条: 注意关闭 http 响应的 body ###
 
+当使用标准的 http 库进行请求时, 需要关闭响应的 Body, 即使你没有读取它或者返回的是空响应.
+
+```
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
+)
+
+func main() {
+	resp, err := http.Get("https://api.ipify.org?format=json")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	defer resp.Body.Close() //ok, most of the time :-)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(string(body))
+}
+```
+
+很多时候请求获得的返回值是 nil 的 resp 和非 nil 的 err. 但是当得到一个重定向的失败时, 这两个值都会出现非 nil 的情况. 需要注意这种情况下的资源泄露.
+
+在原始的 resp.Body.Close() 实现中会读取并丢弃剩余的数据, 这确保了对于使用了 keepalive 的连接可以用于其他的 http 请求. 但在最新的 http 库中没有了这个行为, 用户需要读取并丢弃剩余的数据, 否则 http 连接可能会被关闭而不是被重用. 可以使用如下的代码来实现这个行为:
+
+```
+_, err = io.Copy(ioutil.Discard, resp.Body)
+```
+
 ### 第三十七条: 注意关闭 http 连接 ###
 
+在一些 http 服务器会使用 keepalive 来保持连接, 默认情况下标准的 http 库会在服务端要求关闭连接时关闭, 这表示你可以遇到意料之外的内存耗尽错误.
+
+可以通过将 http 请求体的 Close 字段设置为 true 来要求关闭连接, 或者将请求头中的 Connection 设置为 close 来达到同一效果.
+
+```
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
+)
+
+func main() {
+	req, err := http.NewRequest("GET", "http://golang.org", nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	req.Close = true
+	//or do this:
+	//req.Header.Add("Connection", "close")
+
+	resp, err := http.DefaultClient.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(len(string(body)))
+}
+```
+
+也可以在全局设置关闭连接:
+
+```
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
+)
+
+func main() {
+	tr := &http.Transport{DisableKeepAlives: true}
+	client := &http.Client{Transport: tr}
+
+	resp, err := client.Get("http://golang.org")
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(resp.StatusCode)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(len(string(body)))
+}
+```
+
+如果你需要向同一个服务器发送大量的请求, 那么保持连接的重用是合适的; 如果在短时间内需要连接多个不同的服务器, 那么主动关闭连接是合适的, 或者提高打开文件的数量限制.
+
 ### 第三十八条: 将 JSON 中的数值解码为 interface ###
+
+默认的情况下, Go 将 JSON 中的数值解码为 float64 类型的值, 如果你没有显示指定类型或者指定的是 interface 的话.
+
+```
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+func main() {
+	var data = []byte(`{"status": 200}`)
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	var status = result["status"].(int)   // panic
+	fmt.Println("status value:", status)
+}
+```
+
+有以下几个方式来处理这个问题:
+
+1. 转换为 float64 类型: result["status"].(float64)
+2. 将浮点值转换为需要的类型: uint64(result["status"].(float64))
+3. 使用 Decoder:
+
+```
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+func main() {
+	var data = []byte(`{"status": 200}`)
+
+	var result map[string]interface{}
+	var decoder = json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+
+	if err := decoder.Decode(&result); err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	var status, _ = result["status"].(json.Number).Int64() //ok
+	fmt.Println("status value:", status)
+}
+```
+
+4. 使用 struct 来解码
+
+```
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+func main() {
+	var data = []byte(`{"status": 200}`)
+
+	var result struct {
+		Status uint64 `json:"status"`
+	}
+
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&result); err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	fmt.Printf("result => %+v", result)
+	//prints: result => {Status:200}
+}
+```
+
+5. 使用 json.RawMessage
+
+```
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+func main() {
+	records := [][]byte{
+		[]byte(`{"status": 200, "tag":"one"}`),
+		[]byte(`{"status":"ok", "tag":"two"}`),
+	}
+
+	for idx, record := range records {
+		var result struct {
+			StatusCode uint64
+			StatusName string
+			Status     json.RawMessage `json:"status"`
+			Tag        string          `json:"tag"`
+		}
+
+		if err := json.NewDecoder(bytes.NewReader(record)).Decode(&result); err != nil {
+			fmt.Println("error:", err)
+			return
+		}
+
+		var sstatus string
+		if err := json.Unmarshal(result.Status, &sstatus); err == nil {
+			result.StatusName = sstatus
+		}
+
+		var nstatus uint64
+		if err := json.Unmarshal(result.Status, &nstatus); err == nil {
+			result.StatusCode = nstatus
+		}
+
+		fmt.Printf("[%v] result => %+v\n", idx, result)
+	}
+}
+```
 
 ### 第三十九条: 比较结构体, 数组, slice 和 map 类型的值 ###
 
