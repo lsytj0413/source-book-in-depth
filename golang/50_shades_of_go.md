@@ -1205,29 +1205,592 @@ func main() {
 
 ### 第三十九条: 比较结构体, 数组, slice 和 map 类型的值 ###
 
+当 struct 的每一个属性都可以使用 == 进行比较时, struct 也可以使用 == 进行比较. 对数组来说, 如果其中的元素可以进行比较那么数组也可以进行比较.
+
+更好一点的方式是使用 reflect.DeepEqual 进行比较:
+
+```
+package main
+
+import (
+	"fmt"
+	"reflect"
+)
+
+type data struct {
+	num    int               //ok
+	checks [10]func() bool   //not comparable
+	doit   func() bool       //not comparable
+	m      map[string]string //not comparable
+	bytes  []byte            //not comparable
+}
+
+func main() {
+	v1 := data{}
+	v2 := data{}
+	fmt.Println("v1 == v2:", reflect.DeepEqual(v1, v2)) //prints: v1 == v2: true
+
+	m1 := map[string]string{"one": "a", "two": "b"}
+	m2 := map[string]string{"two": "b", "one": "a"}
+	fmt.Println("m1 == m2:", reflect.DeepEqual(m1, m2)) //prints: m1 == m2: true
+
+	s1 := []int{1, 2, 3}
+	s2 := []int{1, 2, 3}
+	fmt.Println("s1 == s2:", reflect.DeepEqual(s1, s2)) //prints: s1 == s2: true
+}
+```
+
+但是 DeepEqual 函数比较慢, 而且也有一些自身的问题:
+
+```
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+)
+
+func main() {
+	var b1 []byte = nil
+	b2 := []byte{}
+	fmt.Println("b1 == b2:", reflect.DeepEqual(b1, b2)) //prints: b1 == b2: false
+
+	var str string = "one"
+	var in interface{} = "one"
+	fmt.Println("str == in:", str == in, reflect.DeepEqual(str, in))
+	//prints: str == in: true true
+
+	v1 := []string{"one", "two"}
+	v2 := []interface{}{"one", "two"}
+	fmt.Println("v1 == v2:", reflect.DeepEqual(v1, v2))
+	//prints: v1 == v2: false (not ok)
+
+	data := map[string]interface{}{
+		"code":  200,
+		"value": []string{"one", "two"},
+	}
+	encoded, _ := json.Marshal(data)
+	var decoded map[string]interface{}
+	json.Unmarshal(encoded, &decoded)
+	fmt.Println("data == decoded:", reflect.DeepEqual(data, decoded))
+	//prints: data == decoded: false
+}
+```
+
+1. DeepCopy 不认为 nil slice 等于空的 slice, 这和 bytes.Equal 的行为是不同的
+
+```
+package main
+
+import (
+	"bytes"
+	"fmt"
+)
+
+func main() {
+	var b1 []byte = nil
+	b2 := []byte{}
+	fmt.Println("b1 == b2:", bytes.Equal(b1, b2)) //prints: b1 == b2: true
+}
+```
+
+2. 当 DeepCopy 对 slice 进行对比时可能得到预期之外的结果
+
+当对 []byte 或者 string 进行忽略大小写的比较时, 应该先使用 ToUpper 或 ToLower 函数进行处理(在使用 ==, bytes.Equal 和 bytes.Compare 之前); 这只对英文有效, 对其他类型的文字应该使用 bytes.EqualFold 和 strings.EqualFold 函数.
+
+如果你需要对用户提供的密码或其他机密数据进行验证, 不要使用 reflect.DeepEqual, bytes.Equal 和 bytes.Compare, 这些函数可以导致 [时序攻击](https://en.wikipedia.org/wiki/Timing_attack), 为了避免泄露定时信息, 应该使用 "crypto/subtle" package 中的函数, 例如 subtle.ConstantTimeCompare.
+
 ### 第四十条: 从 panic 中恢复 ###
+
+recover 函数可以用来捕获 panic 并进行恢复, 注意 recover 函数只有直接在 defer 中调用才能生效.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	defer func() {
+		fmt.Println("recovered:", recover())
+	}()
+
+	panic("not good")
+}
+```
 
 ### 第四十一条: 在 range 子句中更新和引用值 ###
 
+在 range 子句中生成的数据是实际元素的副本, 不是对实际元素的引用.
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	data := []int{1, 2, 3}
+	for _, v := range data {
+		v *= 10 //original item is not changed
+	}
+
+	fmt.Println("data:", data) //prints data: [1 2 3]
+}
+```
+
 ### 第四十二条: 在 slice 中隐藏数据 ###
+
+当对 slice 重新进行切片处理时, 新的 slice 会引用原 slice 的底层数组. 这可能会导致意料之外的内存泄露.
+
+```
+package main
+
+import "fmt"
+
+func get() []byte {
+	raw := make([]byte, 10000)
+	fmt.Println(len(raw), cap(raw), &raw[0]) //prints: 10000 10000 <byte_addr_x>
+	return raw[:3]
+}
+
+func get2() []byte {
+	raw := make([]byte, 10000)
+	fmt.Println(len(raw), cap(raw), &raw[0]) //prints: 10000 10000 <byte_addr_x>
+	res := make([]byte, 3)
+	copy(res, raw[:3])
+	return res
+}
+
+func main() {
+	data := get()
+	fmt.Println(len(data), cap(data), &data[0]) //prints: 3 10000 <byte_addr_x>
+
+	data = get2()
+	fmt.Println(len(data), cap(data), &data[0]) //prints: 3 10000 <byte_addr_x>
+}
+```
+
+为了避免内存泄露, 可以从临时切片中重新复制数据以释放引用.
 
 ### 第四十三条: 意外的 slice 数据覆写 ###
 
+假设你需要重写一个存储在 slice 中的路径:
+
+```
+package main
+
+import (
+	"bytes"
+	"fmt"
+)
+
+func main() {
+	path := []byte("AAAA/BBBBBBBBB")
+	sepIndex := bytes.IndexByte(path, '/')
+	dir1 := path[:sepIndex]
+	dir2 := path[sepIndex+1:]
+	fmt.Println("dir1 =>", string(dir1)) //prints: dir1 => AAAA
+	fmt.Println("dir2 =>", string(dir2)) //prints: dir2 => BBBBBBBBB
+
+	dir1 = append(dir1, "suffix"...)
+	path = bytes.Join([][]byte{dir1, dir2}, []byte{'/'})
+
+	fmt.Println("dir1 =>", string(dir1)) //prints: dir1 => AAAAsuffix
+	fmt.Println("dir2 =>", string(dir2)) //prints: dir2 => uffixBBBB (not ok)
+
+	fmt.Println("new path =>", string(path))
+}
+```
+
+如上的代码不会得到预期的结果, 因为 dir1 和 dir2 都引用了原始的数组数据, 当对 dir1 和 dir2 进行修改的同时也修改了原始的数据.
+
+可以通过分配新的切片并复制数据解决以上问题, 或者使用完整的切片表达式:
+
+```
+package main
+
+import (
+	"bytes"
+	"fmt"
+)
+
+func main() {
+	path := []byte("AAAA/BBBBBBBBB")
+	sepIndex := bytes.IndexByte(path, '/')
+	dir1 := path[:sepIndex:sepIndex] //full slice expression
+	dir2 := path[sepIndex+1:]
+	fmt.Println("dir1 =>", string(dir1)) //prints: dir1 => AAAA
+	fmt.Println("dir2 =>", string(dir2)) //prints: dir2 => BBBBBBBBB
+
+	dir1 = append(dir1, "suffix"...)
+	path = bytes.Join([][]byte{dir1, dir2}, []byte{'/'})
+
+	fmt.Println("dir1 =>", string(dir1)) //prints: dir1 => AAAAsuffix
+	fmt.Println("dir2 =>", string(dir2)) //prints: dir2 => BBBBBBBBB (ok now)
+
+	fmt.Println("new path =>", string(path))
+}
+```
+
+切片表达式的第三个参数控制新切片的容量, 当追加数据到切片时会触发重新分配内存, 而不是覆盖原始数据.
+
 ### 第四十四条: slice 的持久化 ###
+
+当多个切片引用相同的数据时, 要小心意外的数据覆盖:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	s1 := []int{1, 2, 3}
+	fmt.Println(len(s1), cap(s1), s1) //prints 3 3 [1 2 3]
+
+	s2 := s1[1:]
+	fmt.Println(len(s2), cap(s2), s2) //prints 2 2 [2 3]
+
+	for i := range s2 {
+		s2[i] += 20
+	}
+
+	//still referencing the same array
+	fmt.Println(s1) //prints [1 22 23]
+	fmt.Println(s2) //prints [22 23]
+
+	s2 = append(s2, 4)
+
+	for i := range s2 {
+		s2[i] += 10
+	}
+
+	//s1 is now "stale"
+	fmt.Println(s1) //prints [1 22 23]
+	fmt.Println(s2) //prints [32 33 14]
+}
+```
 
 ### 第四十五条: 类型定义和方法 ###
 
+从现有非接口类型定义新类型时, 新类型不会继承现有类型的方法集.
+
+```
+package main
+
+import "sync"
+
+type myMutex sync.Mutex
+
+func main() {
+	var mtx myMutex
+	mtx.Lock()   //error
+	mtx.Unlock() //error
+}
+```
+
+如果需要原始类型得方法, 可以将原始类型作为嵌入得匿名字段.
+
+```
+type myLocker struct {  
+    sync.Mutex
+}
+```
+
+如果现有类型为接口, 则新类型会保留方法集:
+
+```
+package main
+
+import "sync"
+
+type myLocker sync.Locker
+
+func main() {
+	var lock myLocker = new(sync.Mutex)
+	lock.Lock()   //ok
+	lock.Unlock() //ok
+}
+```
+
 ### 第四十六条: 跳出 for-switch 和 for-select 语句 ###
+
+break 语句可以使用标签跳出指定的循环:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+loop:
+	for {
+		switch {
+		case true:
+			fmt.Println("breaking out...")
+			break loop
+		}
+	}
+
+	fmt.Println("out!")
+}
+```
+
+也可以使用 goto 语句达到同一效果.
 
 ### 第四十七条: for 语句中的迭代变量和闭包 ###
 
+for 语句中的迭代变量在每次迭代中都会被重用, 这表示在 for 循环中创建的每个闭包都会引用相同的变量:
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	data := []string{"one", "two", "three"}
+
+	for _, v := range data {
+		go func() {
+			fmt.Println(v)
+		}()
+	}
+
+	time.Sleep(3 * time.Second)
+	//goroutines print: three, three, three
+}
+```
+
+有以下的方案可以解决该问题:
+
+1. 将当前迭代变量的值复制一份
+
+```
+	for _, v := range data {
+		vcopy := v //
+		go func() {
+			fmt.Println(vcopy)
+		}()
+	}
+```
+
+2. 将当前迭代变量作为参数传递给 goroutine, 也相当于复制一份
+
+```
+	for _, v := range data {
+		go func(in string) {
+			fmt.Println(in)
+		}(v)
+	}
+```
+
+以下代码也存在一个同样原因的错误:
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+type field struct {
+	name string
+}
+
+func (p *field) print() {
+	fmt.Println(p.name)
+}
+
+func main() {
+	data := []field{{"one"}, {"two"}, {"three"}}
+
+	for _, v := range data {
+		go v.print()
+	}
+
+	time.Sleep(3 * time.Second)
+	//goroutines print: three, three, three
+}
+```
+
+但是思考下如下的代码是否是正确的呢?
+
+```
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+type field struct {
+	name string
+}
+
+func (p *field) print() {
+	fmt.Println(p.name)
+}
+
+func main() {
+	data := []*field{{"one"}, {"two"}, {"three"}}
+
+	for _, v := range data {
+		go v.print()
+	}
+
+	time.Sleep(3 * time.Second)
+}
+```
+
 ### 第四十八条: defer 语句中的函数参数求值时机 ###
+
+defer 语句将在本语句被执行时对函数参数进行求值:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	var i int = 1
+
+	defer fmt.Println("result =>", func() int { return i * 2 }())
+	i++
+	//prints: result => 2 (not ok if you expected 4)
+}
+```
 
 ### 第四十九条: defer 语句的执行规则 ###
 
+defer 函数会在当前函数结束时执行, 而不是在包含的代码块退出时执行, 这和变量的作用域规则时不同的. 因此当你有一个长期执行的函数, 并在 for 循环里面使用 defer, 可能会造成资源的清理延后:
+
+```
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+func main() {
+	if len(os.Args) != 2 {
+		os.Exit(-1)
+	}
+
+	start, err := os.Stat(os.Args[1])
+	if err != nil || !start.IsDir() {
+		os.Exit(-1)
+	}
+
+	var targets []string
+	filepath.Walk(os.Args[1], func(fpath string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !fi.Mode().IsRegular() {
+			return nil
+		}
+
+		targets = append(targets, fpath)
+		return nil
+	})
+
+	for _, target := range targets {
+		f, err := os.Open(target)
+		if err != nil {
+			fmt.Println("bad target:", target, "error:", err) //prints error: too many open files
+			break
+		}
+		defer f.Close() //will not be closed at the end of this code block
+		//do something with the file...
+	}
+}
+```
+
 ### 第五十条: 失败的类型断言 ###
 
+当类型断言失败时会返回目标类型的零值:
+
+```
+package main
+
+import "fmt"
+
+func main() {
+	var data interface{} = "great"
+
+	if data, ok := data.(int); ok {
+		fmt.Println("[is an int] value =>", data)
+	} else {
+		fmt.Println("[not an int] value =>", data)
+		//prints: [not an int] value => 0 (not "great")
+	}
+}
+```
+
 ### 第五十一条: 阻塞的 goroutines 和资源泄露 ###
+
+有如下一段代码:
+
+```
+func First(query string, replicas ...Search) Result {  
+    c := make(chan Result)
+    searchReplica := func(i int) { c <- replicas[i](query) }
+    for i := range replicas {
+        go searchReplica(i)
+    }
+    return <-c
+}
+```
+
+上面的代码在有多个 Search 时会造成 goroutine 泄露的问题. 因为使用的 channel 是无缓冲的, 更多的 goroutine 会阻塞在向 channel 发送数据的地方.
+
+为了避免泄露, 需要保证所有的 goroutine 都会退出, 有如下几个方式:
+
+1. 使用一个含有足够大的缓存区的 channel
+2. 使用 select 避免发送阻塞
+
+```
+func First(query string, replicas ...Search) Result {
+	c := make(chan Result, 1)
+	searchReplica := func(i int) {
+		select {
+		case c <- replicas[i](query):
+		default:
+		}
+	}
+	for i := range replicas {
+		go searchReplica(i)
+	}
+	return <-c
+}
+```
+
+3. 使用取消 channel 通知 goroutine 退出
+
+```
+func First(query string, replicas ...Search) Result {
+	c := make(chan Result)
+	done := make(chan struct{})
+	defer close(done)
+	searchReplica := func(i int) {
+		select {
+		case c <- replicas[i](query):
+		case <-done:
+		}
+	}
+	for i := range replicas {
+		go searchReplica(i)
+	}
+
+	return <-c
+}
+```
 
 ## 高级初学者 ##
 
