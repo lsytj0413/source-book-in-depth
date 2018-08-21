@@ -381,7 +381,7 @@ ROUTINE ======================== github.com/lsytj0413/ena/example/profile.handle
 
 使用 web 命令会获取到对应的 svg 图片, 内容如下:
 
-![pprof001.png](/images/go/pprof001.png)
+![pprof001.png](../images/go/pprof001.png)
 
 从上面的输出可以看到, handleHi 函数一共运行了 1.95s, 其中 1.44s 都是消耗在 regexp.MatchString 函数中, 而 regexp.Compile 函数又占据了相当长的时间.
 
