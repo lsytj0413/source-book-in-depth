@@ -15,6 +15,7 @@
     * [1.3 etcd 启动流程分析](README.md)
   * [Golang 备注](golang/README.md)
     * [常见的 50 个错误和陷阱](golang/50_shades_of_go.md)
+    * [Go 程序的调试分析和优化](golang/profiling_and_optimizing_in_go.md)
   * [Effective Python](python/EffectivePython/README.md)
     * [第一章: 用Pythonic方式思考](python/EffectivePython/chapter01.md)
     * [第二章: 函数](python/EffectivePython/chapter02.md)
