@@ -19,6 +19,7 @@
     * [Go 程序的性能分析器标签](golang/profiler_labels_in_go.md)
     * [Golang 中的求值顺序](golang/order_of_evaluation_in_go.md)
     * [Go反射的简单使用](golang/go_reflection.md)
+    * [Golang 调度器的演化史](golang/the_go_scheduler.md)
   * [Effective Python](python/EffectivePython/README.md)
     * [第一章: 用Pythonic方式思考](python/EffectivePython/chapter01.md)
     * [第二章: 函数](python/EffectivePython/chapter02.md)
