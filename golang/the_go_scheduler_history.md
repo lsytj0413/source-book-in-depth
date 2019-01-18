@@ -104,7 +104,7 @@ goroutines 可以视为用户态线程:
 
 ## 其他问题 ##
 
-- 非抢占: cpu bound 型的; sysmon 检测运行了(> 10ms)的并停下它, 放到 global runqueue(lower priority)
+- 非抢占: cpu bound 型的; sysmon 检测运行了(> 10ms)的并停下它(设置可停止标记, 在下次stack扩容时停下), 放到 global runqueue(lower priority)
 - no goroutine priorities
 - no strong preemption: no strong fairness or latency guarantees: Non-cooperative goroutine preemption
 - is not aware of the system topology: NUMA-aware scheduler
