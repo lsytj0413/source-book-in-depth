@@ -22,6 +22,7 @@
     * [Golang 调度器的演化史](golang/the_go_scheduler_history.md)
     * [Golang 调度器](golang/the_scheduler_in_go.md)
     * [使用goast为xorm生成建表sql语句](golang/use_goast_generate_sql_for_xorm.md)
+    * [Go语言中的5个高级测试技巧](golang/5-advanced-testing-techniques-in-go.md)
   * [Effective Python](python/EffectivePython/README.md)
     * [第一章: 用Pythonic方式思考](python/EffectivePython/chapter01.md)
     * [第二章: 函数](python/EffectivePython/chapter02.md)
@@ -90,3 +91,5 @@
    * [第十九章: 高级操作](git/chapter19.md)
    * [第二十章: 提示, 技巧和技术](git/chapter20.md)
    * [第二十一章: Git 和 GitHub](git/chapter21.md)
+ * [文章合集](article/README.md)
+   * [protobuf](article/protobuf.md)
