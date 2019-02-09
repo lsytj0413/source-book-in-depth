@@ -91,5 +91,6 @@
    * [第十九章: 高级操作](git/chapter19.md)
    * [第二十章: 提示, 技巧和技术](git/chapter20.md)
    * [第二十一章: Git 和 GitHub](git/chapter21.md)
+ * [JavaScript 笔记](javascript/README.md)
  * [文章合集](article/README.md)
    * [protobuf](article/protobuf.md)
